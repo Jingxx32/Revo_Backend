@@ -1,0 +1,22 @@
+# FastAPI and related
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Database
+sqlmodel>=0.0.14
+sqlalchemy>=2.0.0
+
+# Configuration
+pydantic-settings>=2.0.0
+
+# Utilities
+python-multipart>=0.0.6
+python-dotenv>=1.0.0
+
+# Security
+passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
+
+# Payments
+stripe>=10.0.0
+
