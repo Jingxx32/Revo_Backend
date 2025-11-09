@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Optional
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
@@ -25,9 +26,9 @@ class PickupRequestCreate(BaseModel):
     storage: Optional[str] = None  # Storage capacity (e.g., "128GB", "256GB", "512GB")
     condition: Optional[str] = None
     additional_info: Optional[str] = None
-    photos_json: Optional[str] = None  # JSON array of photo URLs (if uploaded separately)
-    address_json: Optional[str] = None
-    scheduled_at: Optional[str] = None
+    photos_json: Optional[list] = None  # List of photo URLs (if uploaded separately)
+    address_json: Optional[dict] = None  # Address as dict
+    scheduled_at: Optional[datetime] = None
 
 
 class RespondPayload(BaseModel):
@@ -98,6 +99,33 @@ async def create_pickup_request(
             detail="Brand ID or brand name is required",
         )
     
+    # Parse address_json if it's a string (legacy format)
+    parsed_address = None
+    if address_json:
+        if isinstance(address_json, str):
+            try:
+                parsed_address = json.loads(address_json)
+            except:
+                # If parsing fails, treat as plain address string
+                parsed_address = {"address": address_json}
+        else:
+            parsed_address = address_json
+    
+    # Parse scheduled_at from string to datetime if provided
+    parsed_scheduled_at = None
+    if scheduled_at:
+        if isinstance(scheduled_at, str):
+            try:
+                # Try ISO format (e.g., "2025-01-15T10:00:00" or "2025-01-15T10:00:00Z")
+                if scheduled_at.endswith('Z'):
+                    scheduled_at = scheduled_at[:-1] + '+00:00'
+                parsed_scheduled_at = datetime.fromisoformat(scheduled_at)
+            except (ValueError, AttributeError):
+                # If parsing fails, leave as None (database will handle validation)
+                parsed_scheduled_at = None
+        elif isinstance(scheduled_at, datetime):
+            parsed_scheduled_at = scheduled_at
+    
     # Create pickup request (without photos first to get ID)
     pr = PickupRequest(
         user_id=current_user.id,
@@ -106,8 +134,8 @@ async def create_pickup_request(
         storage=storage,
         condition=condition,
         additional_info=additional_info,
-        address_json=address_json,
-        scheduled_at=scheduled_at,
+        address_json=parsed_address,
+        scheduled_at=parsed_scheduled_at,
         status="requested",
     )
     session.add(pr)
@@ -119,7 +147,8 @@ async def create_pickup_request(
     if photos:
         photo_urls = await save_uploaded_photos(photos, pr.id)
         if photo_urls:
-            pr.photos_json = json.dumps(photo_urls)
+            # photos_json is now a List[str] type, no need for json.dumps()
+            pr.photos_json = photo_urls
             session.add(pr)
             session.commit()
             session.refresh(pr)
@@ -235,6 +264,20 @@ async def request_pickup_compatible(
             "error": "Model and condition are required"
         }
     
+    # Parse location to address_json (Dict format)
+    parsed_address = None
+    if location:
+        if isinstance(location, dict):
+            parsed_address = location
+        elif isinstance(location, str):
+            try:
+                parsed_address = json.loads(location)
+            except:
+                # If parsing fails, treat as plain address string
+                parsed_address = {"address": location}
+        else:
+            parsed_address = {"address": str(location)}
+    
     # Create pickup request
     pr = PickupRequest(
         user_id=current_user.id,
@@ -243,7 +286,7 @@ async def request_pickup_compatible(
         storage=storage,
         condition=condition,
         additional_info=notes,
-        address_json=location,
+        address_json=parsed_address,
         deposit_amount=deposit_paid,
         status="requested",
     )
@@ -317,13 +360,8 @@ def create_pickup_request_json(
     session.commit()
     session.refresh(pr)
     
-    # Parse photos if provided
-    photos = []
-    if pr.photos_json:
-        try:
-            photos = json.loads(pr.photos_json)
-        except:
-            pass
+    # Get photos (now a List[str] type, no need for json.loads())
+    photos = pr.photos_json if pr.photos_json else []
     
     return {
         "id": pr.id,
@@ -352,12 +390,8 @@ def list_my_pickups(
     result = []
     for req in requests:
         brand = session.get(Brand, req.brand_id) if req.brand_id else None
-        photos = []
-        if req.photos_json:
-            try:
-                photos = json.loads(req.photos_json)
-            except:
-                pass
+        # photos_json is now a List[str] type, no need for json.loads()
+        photos = req.photos_json if req.photos_json else []
         
         result.append({
             "id": req.id,

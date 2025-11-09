@@ -1,18 +1,24 @@
 from sqlmodel import SQLModel, create_engine
 from sqlmodel import Session
-from sqlalchemy.pool import StaticPool
+from app.core.config import settings
+import os
 
 # Database configuration
-sqlite_file_name = "development.db"
-sqlite_url = f"sqlite:///./{sqlite_file_name}"
+# Get PostgreSQL connection URL from environment variable or settings
+database_url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
 
-# Create engine with echo=True for SQL logging
-# StaticPool is needed for SQLite to work properly with SQLModel
+# Replace postgresql:// with postgresql+psycopg2:// for SQLAlchemy compatibility
+# Render and other platforms often provide postgresql:// URLs
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+# Create PostgreSQL engine
 engine = create_engine(
-    sqlite_url, 
-    echo=True,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool
+    database_url,
+    echo=True,  # Set to False in production for better performance
+    pool_pre_ping=True,  # Verify connections before using them (helps with connection recovery)
+    pool_size=5,  # Number of connections to maintain in the pool
+    max_overflow=10  # Maximum number of connections to create beyond pool_size
 )
 
 

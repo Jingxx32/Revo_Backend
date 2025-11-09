@@ -5,6 +5,7 @@ uvicorn[standard]>=0.24.0
 # Database
 sqlmodel>=0.0.14
 sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9
 
 # Configuration
 pydantic-settings>=2.0.0
@@ -22,4 +23,7 @@ stripe>=10.0.0
 
 # Pydantic optional extras used (EmailStr)
 email-validator>=2.0.0
+
+# Server (for production deployment on Render)
+gunicorn>=21.2.0
 

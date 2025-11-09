@@ -20,18 +20,26 @@ CONDITION_MAP = {
 }
 
 
-def _parse_images_json(images_json: Optional[str]) -> str:
-    """Extract first image URL from JSON string, or return placeholder."""
+def _parse_images_json(images_json: Optional[list] | Optional[str]) -> str:
+    """Extract first image URL from JSON list or string, or return placeholder."""
     if not images_json:
         return "https://via.placeholder.com/480x360.png?text=Product"
-    try:
-        images = json.loads(images_json)
-        if isinstance(images, list) and len(images) > 0:
-            return images[0] if isinstance(images[0], str) else images[0].get("url", "")
-        elif isinstance(images, dict):
-            return images.get("url", "") or images.get("primary", "")
-    except:
-        pass
+    
+    # Handle new JSON type (list) or legacy string type
+    if isinstance(images_json, list):
+        images = images_json
+    else:
+        # Legacy string format - try to parse
+        try:
+            images = json.loads(images_json) if isinstance(images_json, str) else images_json
+        except:
+            return "https://via.placeholder.com/480x360.png?text=Product"
+    
+    if isinstance(images, list) and len(images) > 0:
+        return images[0] if isinstance(images[0], str) else images[0].get("url", "")
+    elif isinstance(images, dict):
+        return images.get("url", "") or images.get("primary", "")
+    
     return "https://via.placeholder.com/480x360.png?text=Product"
 
 
@@ -60,15 +68,21 @@ def _parse_highlights(product: Product) -> list[str]:
     
     # Also check cost_components_json
     if product.cost_components_json:
-        try:
-            components = json.loads(product.cost_components_json)
-            if isinstance(components, dict):
-                if components.get("warranty"):
-                    highlights.append("Store warranty")
-                if components.get("charger_included"):
-                    highlights.append("Includes charger")
-        except:
-            pass
+        # Handle new JSON type (dict) or legacy string type
+        if isinstance(product.cost_components_json, dict):
+            components = product.cost_components_json
+        else:
+            # Legacy string format - try to parse
+            try:
+                components = json.loads(product.cost_components_json) if isinstance(product.cost_components_json, str) else product.cost_components_json
+            except:
+                components = None
+        
+        if isinstance(components, dict):
+            if components.get("warranty"):
+                highlights.append("Store warranty")
+            if components.get("charger_included"):
+                highlights.append("Includes charger")
     
     # Default highlights if none found
     if not highlights:
@@ -77,18 +91,26 @@ def _parse_highlights(product: Product) -> list[str]:
     return highlights[:5]  # Limit to 5 highlights
 
 
-def _parse_json_array(json_str: Optional[str], default: list = None) -> list:
-    """Parse JSON array string, return default if invalid."""
+def _parse_json_array(json_data: Optional[list] | Optional[str], default: list = None) -> list:
+    """Parse JSON array (list or string), return default if invalid."""
     if default is None:
         default = []
-    if not json_str:
+    if not json_data:
         return default
-    try:
-        parsed = json.loads(json_str)
-        if isinstance(parsed, list):
-            return parsed
-    except:
-        pass
+    
+    # Handle new JSON type (list) or legacy string type
+    if isinstance(json_data, list):
+        return json_data
+    
+    # Legacy string format - try to parse
+    if isinstance(json_data, str):
+        try:
+            parsed = json.loads(json_data)
+            if isinstance(parsed, list):
+                return parsed
+        except:
+            pass
+    
     return default
 
 
