@@ -187,25 +187,64 @@ def _format_product_response(product: Product, brand: Optional[Brand] = None) ->
 
 @router.get("/", response_model=list[ProductResponse])
 def list_products(
-    category: Optional[str] = Query(None, description="Filter by category name (e.g., 'Phone', 'Laptop')"),
-    brand: Optional[str] = Query(None, description="Filter by brand name (e.g., 'Apple', 'Samsung')"),
-    condition: Optional[str] = Query(None, description="Filter by condition: 'A' (Excellent), 'B' (Great), 'C' (Like-new)"),
-    min_price: Optional[float] = Query(None, description="Minimum price filter"),
-    max_price: Optional[float] = Query(None, description="Maximum price filter"),
-    city: Optional[str] = Query(None, description="Filter by city (e.g., 'Vancouver', 'Ottawa', 'Edmonton')"),
+    category: Optional[str] = Query(
+        None, 
+        description="Filter by category name. Available categories: 'Phone', 'Laptop', 'Tablet', 'Accessory', 'Watch', 'Headphones'. Case-insensitive matching is supported."
+    ),
+    brand: Optional[str] = Query(
+        None, 
+        description="Filter by brand name. Available brands: 'Apple', 'Samsung', 'Google', 'Microsoft', 'Dell', 'HP', 'Lenovo', 'Sony'. Case-sensitive matching."
+    ),
+    condition: Optional[str] = Query(
+        None, 
+        description="Filter by product condition. Valid values: 'A' (Excellent - like new), 'B' (Great - minor wear), 'C' (Like-new - acceptable condition with some wear). Case-insensitive."
+    ),
+    min_price: Optional[float] = Query(
+        None, 
+        description="Minimum price filter (inclusive). Price is determined by resale_price, list_price, or base_price (in that order). Must be a positive number."
+    ),
+    max_price: Optional[float] = Query(
+        None, 
+        description="Maximum price filter (inclusive). Price is determined by resale_price, list_price, or base_price (in that order). Must be a positive number greater than min_price."
+    ),
+    city: Optional[str] = Query(
+        None, 
+        description="Filter by city availability. Valid cities: 'Vancouver', 'Ottawa', 'Edmonton'. Case-insensitive matching. Filters products based on city_availability_json field."
+    ),
     session=Depends(get_session),
 ):
-    """Get products list with optional filters: category, brand, condition, price range."""
+    """Get products list with optional filters.
+    
+    Returns a list of products matching the specified filters. All filters are optional and can be combined.
+    Products are filtered based on:
+    - Category: Must match exactly (case-insensitive)
+    - Brand: Must match exactly (case-sensitive)
+    - Condition: Must be one of 'A', 'B', or 'C' (case-insensitive)
+    - Price range: Uses resale_price if available, otherwise list_price, otherwise base_price
+    - City: Must be in the product's city_availability_json array (case-insensitive)
+    
+    Returns an empty array if no products match the criteria or if a specified category/brand doesn't exist.
+    """
     # Build query
     stmt = select(Product)
     
     # Filter by category if provided
     if category:
+        # Try exact match first
         cat = session.exec(select(Category).where(Category.name == category)).first()
+        # If not found, try case-insensitive match
+        if not cat:
+            all_categories = session.exec(select(Category)).all()
+            for c in all_categories:
+                if c.name.lower() == category.lower():
+                    cat = c
+                    break
         if cat:
             stmt = stmt.where(Product.category_id == cat.id)
         else:
             # If category not found, return empty list
+            # Log for debugging (can be removed in production)
+            print(f"DEBUG: Category '{category}' not found in database")
             return []
     
     # Filter by brand if provided
@@ -229,6 +268,10 @@ def list_products(
     # Execute query to get products
     products = session.exec(stmt).all()
     
+    # Debug: Log number of products found
+    if category:
+        print(f"DEBUG: Found {len(products)} products for category '{category}'")
+    
     # Filter by price range (applied after query for flexibility with price fields)
     if min_price is not None or max_price is not None:
         filtered_products = []
@@ -248,31 +291,57 @@ def list_products(
     # Format responses with brand information
     products_response = []
     for product in products:
-        brand_obj = session.get(Brand, product.brand_id) if product.brand_id else None
-        product_response = _format_product_response(product, brand_obj)
-        
-        # Filter by city if provided (check cityAvailability)
-        if city:
-            city_availability = product_response.cityAvailability or []
-            city_normalized = city.lower()
-            if not any(c.lower() == city_normalized for c in city_availability):
-                continue
-        
-        products_response.append(product_response)
+        try:
+            brand_obj = session.get(Brand, product.brand_id) if product.brand_id else None
+            product_response = _format_product_response(product, brand_obj)
+            
+            # Filter by city if provided (check cityAvailability)
+            if city:
+                city_availability = product_response.cityAvailability or []
+                city_normalized = city.lower()
+                if not any(c.lower() == city_normalized for c in city_availability):
+                    continue
+            
+            products_response.append(product_response)
+        except Exception as e:
+            # Log error but continue processing other products
+            print(f"DEBUG: Error formatting product {product.id}: {e}")
+            continue
     
     return products_response
 
 
 @router.get("/search", response_model=list[ProductResponse])
 def search_products(
-    q: str = Query(..., description="Search keyword"),
-    category: Optional[str] = Query(None, description="Filter by category name"),
-    brand: Optional[str] = Query(None, description="Filter by brand name"),
-    min_price: Optional[float] = Query(None, description="Minimum price filter"),
-    max_price: Optional[float] = Query(None, description="Maximum price filter"),
+    q: str = Query(..., description="Search keyword. Searches case-insensitively in product title, model name, and description fields."),
+    category: Optional[str] = Query(
+        None, 
+        description="Filter by category name. Available categories: 'Phone', 'Laptop', 'Tablet', 'Accessory', 'Watch', 'Headphones'. Case-insensitive matching is supported."
+    ),
+    brand: Optional[str] = Query(
+        None, 
+        description="Filter by brand name. Available brands: 'Apple', 'Samsung', 'Google', 'Microsoft', 'Dell', 'HP', 'Lenovo', 'Sony'. Case-sensitive matching."
+    ),
+    min_price: Optional[float] = Query(
+        None, 
+        description="Minimum price filter (inclusive). Price is determined by resale_price, list_price, or base_price (in that order). Must be a positive number."
+    ),
+    max_price: Optional[float] = Query(
+        None, 
+        description="Maximum price filter (inclusive). Price is determined by resale_price, list_price, or base_price (in that order). Must be a positive number greater than min_price."
+    ),
     session=Depends(get_session),
 ):
-    """Search products by keyword in title, model, or description."""
+    """Search products by keyword in title, model, or description.
+    
+    Performs a case-insensitive search across the following product fields:
+    - title: Product title/name
+    - model: Product model name (e.g., 'iPhone 14', 'MacBook Air M2')
+    - description: Product description text
+    
+    Additional filters (category, brand, price range) can be combined with the search keyword.
+    Returns an empty array if no products match the search criteria.
+    """
     # Build search query - search in title, model, and description (case-insensitive)
     search_lower = q.lower()
     
@@ -335,11 +404,27 @@ def search_products(
 
 @router.get("/deals")
 def get_deals(
-    limit: Optional[int] = Query(10, description="Maximum number of deals to return"),
-    min_discount: Optional[float] = Query(None, description="Minimum discount percentage"),
+    limit: Optional[int] = Query(
+        10, 
+        description="Maximum number of deals to return. Default is 10. Must be a positive integer. Results are sorted by discount percentage (highest first)."
+    ),
+    min_discount: Optional[float] = Query(
+        None, 
+        description="Minimum discount percentage filter (inclusive). Discount is calculated as: ((original_price - current_price) / original_price) * 100. Must be between 0 and 100. Only products with discounts greater than or equal to this value are returned."
+    ),
     session=Depends(get_session),
 ):
-    """Get products with discounts (deals)."""
+    """Get products with discounts (deals).
+    
+    Returns products that have a discount (current price < original price).
+    Discount calculation:
+    - Current price: resale_price (if available), otherwise list_price
+    - Original price: base_price (if available), otherwise list_price
+    - Discount %: ((original_price - current_price) / original_price) * 100
+    
+    Results are sorted by discount percentage in descending order (highest discount first).
+    Only products with valid pricing and a positive discount are included.
+    """
     # Get all products
     products = session.exec(select(Product)).all()
     
@@ -388,8 +473,30 @@ def get_deals(
 
 
 @router.get("/{product_id}", response_model=ProductResponse)
-def get_product(product_id: int, session=Depends(get_session)):
-    """Get a single product by ID."""
+def get_product(
+    product_id: int,
+    session=Depends(get_session)
+):
+    """Get a single product by ID.
+    
+    Returns detailed information about a specific product including:
+    - Basic information (title, model, brand, category)
+    - Pricing (price, originalPrice)
+    - Condition rating (A, B, or C)
+    - Ratings and reviews
+    - Location and city availability
+    - Product highlights
+    - Product images
+    
+    Args:
+        product_id: Product ID (path parameter). Must be a positive integer corresponding to an existing product.
+        
+    Returns:
+        ProductResponse with detailed product information
+        
+    Raises:
+        HTTPException: 404 Not Found if the product doesn't exist
+    """
     product = session.get(Product, product_id)
     if not product:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")

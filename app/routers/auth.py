@@ -2,11 +2,11 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlmodel import select
+from sqlmodel import select, Session
 
 from app.db.database import get_session
 from app.db.models import User
-from app.schemas.auth import UserCreate, Token
+from app.schemas.auth import UserCreate, UserLogin, Token, LoginSuccessResponse, LoginErrorResponse
 from app.core.security import (
     hash_password,
     verify_password,
@@ -20,45 +20,57 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-def register(payload: UserCreate, session=Depends(get_session)):
-    """Register a new user (compatible with frontend format)."""
+def register(user_in: UserCreate, db: Session = Depends(get_session)):
+    """Register a new user (compatible with frontend format).
+    
+    Security: All new users are created with 'customer' role.
+    The role field is not accepted from the client and is hard-coded server-side
+    to prevent privilege escalation attacks.
+    """
     # Check if user exists
-    existing = session.exec(select(User).where(User.email == payload.email)).first()
+    existing = db.exec(select(User).where(User.email == user_in.email)).first()
     if existing:
         return {
             "success": False,
             "error": "Email already registered"
         }
-
-    user = User(
-        email=payload.email,
-        password_hash=hash_password(payload.password),
-        role=payload.role or "customer",
+    
+    # Hash password
+    hashed_password = hash_password(user_in.password)
+    
+    # Create new user with role="customer" (hard-coded for security)
+    new_user = User(
+        email=user_in.email,
+        password_hash=hashed_password,
+        role="customer"  # <--- 这就是真正的修复！强制设置为 customer
     )
-    session.add(user)
-    session.commit()
-    session.refresh(user)
-
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    # Generate JWT token for immediate authentication
     access_token = create_access_token(
-        {"sub": str(user.id), "email": user.email, "id": user.id, "role": user.role},
+        {"sub": str(new_user.id), "email": new_user.email, "id": new_user.id, "role": new_user.role},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     )
     
+    # Return frontend-compatible response
     return {
         "success": True,
         "token": access_token,
         "user": {
-            "id": user.id,
-            "email": user.email,
-            "role": user.role,
+            "id": new_user.id,
+            "email": new_user.email,
+            "role": new_user.role,
         }
     }
 
 
 @router.post("/token", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), session=Depends(get_session)):
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_session)):
     # OAuth2PasswordRequestForm provides username and password fields
-    user = session.exec(select(User).where(User.email == form_data.username)).first()
+    user = db.exec(select(User).where(User.email == form_data.username)).first()
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 
@@ -69,7 +81,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), session=Depends(get_
     return Token(access_token=access_token)
 
 
-def _login_compatible_logic(email: str, password: str, session):
+def _login_compatible_logic(email: str, password: str, db: Session):
     """Shared login logic for compatible endpoints."""
     if not email or not password:
         return {
@@ -77,7 +89,7 @@ def _login_compatible_logic(email: str, password: str, session):
             "error": "Email and password are required"
         }
     
-    user = session.exec(select(User).where(User.email == email)).first()
+    user = db.exec(select(User).where(User.email == email)).first()
     if not user or not verify_password(password, user.password_hash):
         return {
             "success": False,
@@ -101,11 +113,27 @@ def _login_compatible_logic(email: str, password: str, session):
 
 
 @router.post("/login")
-def login_compatible(payload: dict, session=Depends(get_session)):
-    """Compatible login endpoint for frontend (expects {email, password})."""
-    email = payload.get("email")
-    password = payload.get("password")
-    return _login_compatible_logic(email, password, session)
+def login_compatible(user_login: UserLogin, db: Session = Depends(get_session)):
+    """Compatible login endpoint for frontend (expects {email, password}).
+    
+    Authenticates a user with email and password, returns JWT token and user information.
+    
+    **Request Body:**
+    - email: User email address (required)
+    - password: User password (required)
+    
+    **Response:**
+    - On success: `{success: true, token: "...", user: {id, email, role}}`
+    - On failure: `{success: false, error: "..."}`
+    
+    Args:
+        user_login: Login credentials containing email and password
+        db: Database session
+        
+    Returns:
+        Login response with success status, token, and user information, or error response
+    """
+    return _login_compatible_logic(user_login.email, user_login.password, db)
 
 
 @router.get("/me")

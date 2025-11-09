@@ -24,15 +24,21 @@ engine = create_engine(
 
 def create_db_and_tables():
     """Create all database tables based on the models."""
-    # Import all models here to ensure they are registered
-    from app.db.models import (
-        Brand, Category, User, Product, Cart, CartItem,
-        Order, OrderItem, Payment, PickupRequest, Evaluation, AuditLog
-    )
-    
-    # Create all tables
-    SQLModel.metadata.create_all(engine)
-    print("Database and tables created successfully!")
+    try:
+        # Import all models here to ensure they are registered
+        from app.db.models import (
+            Brand, Category, User, Product, Cart, CartItem,
+            Order, OrderItem, Payment, PickupRequest, Evaluation, AuditLog
+        )
+        
+        # Create all tables (if not exists)
+        SQLModel.metadata.create_all(engine)
+        print("Database and tables created successfully!")
+    except Exception as e:
+        print(f"Error creating database tables: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 def init_db():
