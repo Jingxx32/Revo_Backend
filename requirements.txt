@@ -20,3 +20,6 @@ python-jose[cryptography]>=3.3.0
 # Payments
 stripe>=10.0.0
 
+# Pydantic optional extras used (EmailStr)
+email-validator>=2.0.0
+

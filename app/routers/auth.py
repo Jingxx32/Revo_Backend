@@ -11,6 +11,7 @@ from app.core.security import (
     hash_password,
     verify_password,
     create_access_token,
+    get_current_user,
     ACCESS_TOKEN_EXPIRE_MINUTES,
 )
 
@@ -18,12 +19,16 @@ from app.core.security import (
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
-@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
+@router.post("/register", status_code=status.HTTP_201_CREATED)
 def register(payload: UserCreate, session=Depends(get_session)):
+    """Register a new user (compatible with frontend format)."""
     # Check if user exists
     existing = session.exec(select(User).where(User.email == payload.email)).first()
     if existing:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+        return {
+            "success": False,
+            "error": "Email already registered"
+        }
 
     user = User(
         email=payload.email,
@@ -38,7 +43,16 @@ def register(payload: UserCreate, session=Depends(get_session)):
         {"sub": str(user.id), "email": user.email, "id": user.id, "role": user.role},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     )
-    return Token(access_token=access_token)
+    
+    return {
+        "success": True,
+        "token": access_token,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "role": user.role,
+        }
+    }
 
 
 @router.post("/token", response_model=Token)
@@ -53,5 +67,55 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), session=Depends(get_
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     )
     return Token(access_token=access_token)
+
+
+def _login_compatible_logic(email: str, password: str, session):
+    """Shared login logic for compatible endpoints."""
+    if not email or not password:
+        return {
+            "success": False,
+            "error": "Email and password are required"
+        }
+    
+    user = session.exec(select(User).where(User.email == email)).first()
+    if not user or not verify_password(password, user.password_hash):
+        return {
+            "success": False,
+            "error": "Incorrect email or password"
+        }
+    
+    access_token = create_access_token(
+        {"sub": str(user.id), "email": user.email, "id": user.id, "role": user.role},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    
+    return {
+        "success": True,
+        "token": access_token,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "role": user.role,
+        }
+    }
+
+
+@router.post("/login")
+def login_compatible(payload: dict, session=Depends(get_session)):
+    """Compatible login endpoint for frontend (expects {email, password})."""
+    email = payload.get("email")
+    password = payload.get("password")
+    return _login_compatible_logic(email, password, session)
+
+
+@router.get("/me")
+def get_current_user_info(current_user: User = Depends(get_current_user)):
+    """Get current authenticated user information."""
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "role": current_user.role,
+        "created_at": current_user.created_at,
+    }
 
 

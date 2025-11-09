@@ -41,6 +41,14 @@ logs/
 *.sqlite
 *.sqlite3
 
+# Uploaded files
+uploads/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+
 # Testing
 .coverage
 .pytest_cache/

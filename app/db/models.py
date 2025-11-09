@@ -35,6 +35,7 @@ class Product(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     sku: str = Field(sa_column_kwargs={"unique": True})
     title: str
+    model: Optional[str] = Field(default=None)  # Product model name (e.g., "iPhone 14", "MacBook Air M2")
     brand_id: Optional[int] = Field(default=None, foreign_key="brands.id")
     category_id: Optional[int] = Field(default=None, foreign_key="categories.id")
     condition: Optional[str] = Field(default=None)  # CHECK: A, B, C
@@ -46,6 +47,11 @@ class Product(SQLModel, table=True):
     list_price: Optional[float] = Field(default=None)
     resale_price: Optional[float] = Field(default=None)
     qty: int = Field(default=0)
+    rating: Optional[float] = Field(default=None)  # Product rating (e.g., 4.8)
+    reviews: Optional[int] = Field(default=0)  # Number of reviews
+    location: Optional[str] = Field(default=None)  # Location (e.g., "Vancouver Hub", "Ottawa Lab")
+    highlights_json: Optional[str] = Field(default=None)  # JSON array of highlights
+    city_availability_json: Optional[str] = Field(default=None)  # JSON array of available cities
     created_at: Optional[str] = Field(default=None)
     updated_at: Optional[str] = Field(default=None)
 
@@ -113,7 +119,10 @@ class PickupRequest(SQLModel, table=True):
     user_id: int = Field(foreign_key="users.id")
     brand_id: Optional[int] = Field(default=None, foreign_key="brands.id")
     model_text: Optional[str] = Field(default=None)
+    storage: Optional[str] = Field(default=None)  # Storage capacity (e.g., "128GB", "256GB", "512GB")
     condition: Optional[str] = Field(default=None)
+    additional_info: Optional[str] = Field(default=None)  # Additional information/notes
+    photos_json: Optional[str] = Field(default=None)  # JSON array of photo URLs
     address_json: Optional[str] = Field(default=None)
     scheduled_at: Optional[str] = Field(default=None)
     deposit_amount: Optional[float] = Field(default=None)

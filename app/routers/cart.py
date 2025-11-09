@@ -60,6 +60,21 @@ def get_cart(current_user: User = Depends(get_current_user), session=Depends(get
     return _serialize_cart(cart, session)
 
 
+@router.get("/count")
+def get_cart_count(current_user: User = Depends(get_current_user), session=Depends(get_session)):
+    """Get cart item count and total items quantity."""
+    cart = _get_or_create_cart(current_user.id, session)
+    items = session.exec(select(CartItem).where(CartItem.cart_id == cart.id)).all()
+    
+    count = len(items)  # Number of unique products
+    total_items = sum(item.qty for item in items)  # Total quantity of all items
+    
+    return {
+        "count": count,
+        "total_items": total_items,
+    }
+
+
 @router.post("/items", status_code=status.HTTP_201_CREATED)
 def add_item(payload: CartItemCreate, current_user: User = Depends(get_current_user), session=Depends(get_session)):
     # Validate product
