@@ -6,7 +6,7 @@ from sqlmodel import select, Session
 
 from app.db.database import get_session
 from app.db.models import User
-from app.schemas.auth import UserCreate, UserLogin, Token, LoginSuccessResponse, LoginErrorResponse
+from app.schemas.auth import UserCreate, Token
 from app.core.security import (
     hash_password,
     verify_password,
@@ -79,61 +79,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     )
     return Token(access_token=access_token)
-
-
-def _login_compatible_logic(email: str, password: str, db: Session):
-    """Shared login logic for compatible endpoints."""
-    if not email or not password:
-        return {
-            "success": False,
-            "error": "Email and password are required"
-        }
-    
-    user = db.exec(select(User).where(User.email == email)).first()
-    if not user or not verify_password(password, user.password_hash):
-        return {
-            "success": False,
-            "error": "Incorrect email or password"
-        }
-    
-    access_token = create_access_token(
-        {"sub": str(user.id), "email": user.email, "id": user.id, "role": user.role},
-        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
-    )
-    
-    return {
-        "success": True,
-        "token": access_token,
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "role": user.role,
-        }
-    }
-
-
-@router.post("/login")
-def login_compatible(user_login: UserLogin, db: Session = Depends(get_session)):
-    """Compatible login endpoint for frontend (expects {email, password}).
-    
-    Authenticates a user with email and password, returns JWT token and user information.
-    
-    **Request Body:**
-    - email: User email address (required)
-    - password: User password (required)
-    
-    **Response:**
-    - On success: `{success: true, token: "...", user: {id, email, role}}`
-    - On failure: `{success: false, error: "..."}`
-    
-    Args:
-        user_login: Login credentials containing email and password
-        db: Database session
-        
-    Returns:
-        Login response with success status, token, and user information, or error response
-    """
-    return _login_compatible_logic(user_login.email, user_login.password, db)
 
 
 @router.get("/me")

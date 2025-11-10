@@ -3,7 +3,7 @@ import os
 from typing import Optional
 
 import stripe
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from sqlmodel import select
 
 from app.core.security import get_current_user
@@ -120,7 +120,7 @@ def create_order(current_user: User = Depends(get_current_user), session=Depends
 
 @router.post("/checkout")
 def checkout_compatible(
-    orderData: dict,
+    orderData: dict = Body(...),
     current_user: User = Depends(get_current_user),
     session=Depends(get_session),
 ):

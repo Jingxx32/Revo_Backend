@@ -3,7 +3,7 @@ import os
 from typing import Optional
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlmodel import select
 
@@ -157,9 +157,8 @@ async def create_pickup_request(
 
 @router.post("/estimate", status_code=status.HTTP_200_OK)
 def get_tradein_estimate(
-    deviceData: dict,
+    deviceData: dict = Body(...),
     session=Depends(get_session),
-    current_user: User = None,  # Make optional for estimate
 ):
     """Get trade-in estimate (compatible endpoint for frontend)."""
     # Extract device data
