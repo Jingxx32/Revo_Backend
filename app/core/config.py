@@ -1,6 +1,8 @@
 from pydantic_settings import BaseSettings
-from typing import List
+from pydantic import field_validator, model_validator
+from typing import List, Any
 import os
+import json
 
 class Settings(BaseSettings):
     # API Settings
@@ -16,16 +18,47 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # Token expiration time in minutes
     
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Support SECRET_KEY environment variable for backward compatibility
-        # Check SECRET_KEY first, then JWT_SECRET_KEY
+    # CORS
+    # CORS_ORIGINS can be set via environment variable as comma-separated string or JSON array
+    # Example (comma-separated): CORS_ORIGINS="http://localhost:3000,http://w22c236sqg.free.wtbusaym.site"
+    # Example (JSON): CORS_ORIGINS='["http://localhost:3000","http://w22c236sqg.free.wtbusaym.site"]'
+    # Default includes localhost and the frontend URL
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:8000",
+        "http://localhost:3000",
+        "http://w22c236sqg.free.wtbusaym.site",
+        "https://w22c236sqg.free.wtbusaym.site",  # Also support HTTPS
+    ]
+    
+    @field_validator('CORS_ORIGINS', mode='before')
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> List[str]:
+        """Parse CORS_ORIGINS from string (comma-separated or JSON) to list."""
+        # If v is already a list, return it
+        if isinstance(v, list):
+            return v
+        
+        # If v is a string, parse it
+        if isinstance(v, str):
+            try:
+                # Try to parse as JSON array first
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, TypeError):
+                # If JSON parsing fails, treat as comma-separated string
+                return [origin.strip() for origin in v.split(",") if origin.strip()]
+        
+        # For any other type, return as-is (should not happen, but safe fallback)
+        return v
+    
+    @model_validator(mode='after')
+    def handle_secret_key(self):
+        """Support SECRET_KEY environment variable for backward compatibility."""
         secret_key_env = os.getenv("SECRET_KEY")
         if secret_key_env:
             self.JWT_SECRET_KEY = secret_key_env
-    
-    # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:8000", "http://localhost:3000"]
+        return self
     
     # Stripe
     STRIPE_SECRET_KEY: str = "sk_test_your_stripe_secret_key"
