@@ -55,19 +55,135 @@ async def save_uploaded_photos(files: list[UploadFile], pickup_request_id: int) 
 
 @router.post("/pickup-requests", status_code=status.HTTP_201_CREATED)
 async def create_pickup_request(
-    brand_id: Optional[int] = Form(None),
-    brand_name: Optional[str] = Form(None),
-    model_text: str = Form(...),
-    storage: Optional[str] = Form(None),
-    condition: str = Form(...),
-    additional_info: Optional[str] = Form(None),
-    address_json: Optional[str] = Form(None),
-    scheduled_at: Optional[str] = Form(None),
-    photos: list[UploadFile] = File(default=[]),
+    brand_id: Optional[int] = Form(
+        None,
+        description="Brand ID of the device. Either brand_id or brand_name must be provided.",
+        example=1
+    ),
+    brand_name: Optional[str] = Form(
+        None,
+        description="Brand name of the device (e.g., 'Apple', 'Samsung', 'Huawei'). Either brand_id or brand_name must be provided. If brand_name is provided, it will be resolved to brand_id automatically.",
+        example="Apple"
+    ),
+    model_text: str = Form(
+        ...,
+        description="Model name or description of the device. This is a required field.",
+        example="iPhone 14 Pro",
+        min_length=1,
+        max_length=200
+    ),
+    storage: Optional[str] = Form(
+        None,
+        description="Storage capacity of the device. Common values: '128GB', '256GB', '512GB', '1TB'. This field is optional but recommended for accurate valuation.",
+        example="256GB"
+    ),
+    condition: str = Form(
+        ...,
+        description="Condition of the device. Required field. Common values: 'A' (Excellent), 'B' (Great), 'C' (Like-new), 'D' (Good), 'E' (Fair). The condition affects the trade-in valuation.",
+        example="A",
+        min_length=1,
+        max_length=10
+    ),
+    additional_info: Optional[str] = Form(
+        None,
+        description="Additional information about the device condition, damage, or special notes. This is an optional field that can help with accurate valuation.",
+        example="Minor scratches on screen, battery health at 85%",
+        max_length=1000
+    ),
+    address_json: Optional[str] = Form(
+        None,
+        description="Pickup address in JSON format. Can be a JSON string or plain address string. If JSON, it should contain address fields like 'street', 'city', 'postal_code', etc. Example: '{\"street\": \"123 Main St\", \"city\": \"Shanghai\", \"postal_code\": \"200000\"}' or simply a plain address string.",
+        example='{"street": "123 Main St", "city": "Shanghai", "district": "Pudong", "postal_code": "200000"}'
+    ),
+    scheduled_at: Optional[str] = Form(
+        None,
+        description="Scheduled pickup date and time in ISO 8601 format (e.g., '2025-01-15T10:00:00' or '2025-01-15T10:00:00Z'). This field is optional. If not provided, the pickup will be scheduled based on availability.",
+        example="2025-01-15T10:00:00"
+    ),
+    photos: list[UploadFile] = File(
+        default=[],
+        description="Photos of the device (up to 5 files). Each file must be under 5MB. Supported formats: JPEG, PNG, etc. Photos help with accurate device condition assessment. Files are uploaded as multipart/form-data. Note: Only the first 5 files will be processed if more are provided."
+    ),
     current_user: User = Depends(get_current_user),
     session=Depends(get_session),
 ):
-    """Create a pickup request for trade-in estimate."""
+    """
+    Create a pickup request for trade-in estimate.
+    
+    This endpoint allows authenticated users to create a pickup request for their device trade-in.
+    The request requires device information such as brand, model, condition, and optional details
+    like storage capacity, photos, and pickup address.
+    
+    **Request Format:**
+    - Content-Type: `multipart/form-data`
+    - Authentication: Required (Bearer token)
+    
+    **Required Parameters:**
+    - `model_text`: Device model name (required)
+    - `condition`: Device condition (required)
+    - Either `brand_id` OR `brand_name` (at least one is required)
+    
+    **Optional Parameters:**
+    - `storage`: Storage capacity (recommended for accurate valuation)
+    - `additional_info`: Additional notes about the device
+    - `address_json`: Pickup address (JSON string or plain text)
+    - `scheduled_at`: Preferred pickup date/time (ISO 8601 format)
+    - `photos`: Device photos (up to 5 files, each < 5MB)
+    
+    **Response (201 Created):**
+    Returns a JSON object containing the created pickup request details:
+    - `id` (int): Unique pickup request ID
+    - `user_id` (int): ID of the user who created the request
+    - `brand_id` (int): Brand ID of the device
+    - `model_text` (str): Device model name
+    - `storage` (str, optional): Storage capacity
+    - `condition` (str): Device condition
+    - `additional_info` (str, optional): Additional device information
+    - `photos` (list[str]): URLs of uploaded photos
+    - `status` (str): Request status (typically "requested")
+    - `created_at` (datetime, optional): Creation timestamp
+    
+    **Error Responses:**
+    - `400 Bad Request`: Missing required fields (brand_id/brand_name, model_text, or condition)
+    - `401 Unauthorized`: Invalid or missing authentication token
+    - `404 Not Found`: Brand not found (if brand_name is provided but doesn't exist)
+    
+    **Example Request:**
+    ```
+    POST /api/tradein/pickup-requests
+    Content-Type: multipart/form-data
+    Authorization: Bearer <token>
+    
+    brand_name=Apple
+    model_text=iPhone 14 Pro
+    storage=256GB
+    condition=A
+    additional_info=Minor scratches on screen
+    address_json={"street": "123 Main St", "city": "Shanghai"}
+    scheduled_at=2025-01-15T10:00:00
+    photos=@device_photo1.jpg
+    photos=@device_photo2.jpg
+    ```
+    
+    **Example Response:**
+    ```json
+    {
+        "id": 123,
+        "user_id": 45,
+        "brand_id": 1,
+        "model_text": "iPhone 14 Pro",
+        "storage": "256GB",
+        "condition": "A",
+        "additional_info": "Minor scratches on screen",
+        "photos": [
+            "/uploads/tradein_photos/pickup_123_0.jpg",
+            "/uploads/tradein_photos/pickup_123_1.jpg"
+        ],
+        "status": "requested",
+        "created_at": "2025-01-15T10:00:00"
+    }
+    ```
+    """
     # Resolve brand_id from brand_name if provided
     resolved_brand_id = brand_id
     if not resolved_brand_id and brand_name:
