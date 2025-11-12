@@ -43,11 +43,20 @@ logs/
 
 # Uploaded files
 uploads/
+
+# Image files (ignore by default, but allow static/images/)
 *.jpg
 *.jpeg
 *.png
 *.gif
 *.webp
+
+# Allow test images in static/images/ directory
+!static/images/*.jpg
+!static/images/*.jpeg
+!static/images/*.png
+!static/images/*.gif
+!static/images/*.webp
 
 # Testing
 .coverage

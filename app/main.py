@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -45,9 +46,12 @@ async def api_health_check():
     return {"status": "healthy"}
 
 # Serve uploaded files
-import os
 if os.path.exists("uploads"):
     app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+# Serve static images for testing
+if os.path.exists("static/images"):
+    app.mount("/static/images", StaticFiles(directory="static/images"), name="static_images")
 
 # Prevent noisy 404s for favicon
 @app.get("/favicon.ico", include_in_schema=False)
