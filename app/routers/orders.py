@@ -19,14 +19,23 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
 def _get_product_image(product: Product) -> Optional[str]:
     """Extract first image URL from product's images_json."""
-    if not product.images_json:
+    if not product or not product.images_json:
         return None
-    try:
-        images = json.loads(product.images_json)
-        if isinstance(images, list) and len(images) > 0:
-            return images[0] if isinstance(images[0], str) else None
-    except:
-        pass
+    
+    images = product.images_json
+    
+    # 如果数据库返回的是字符串(SQLite遗留)，尝试解析
+    if isinstance(images, str):
+        try:
+            images = json.loads(images)
+        except:
+            return None
+            
+    # 如果已经是列表(PostgreSQL)，直接使用
+    if isinstance(images, list) and len(images) > 0:
+        # 确保取出的第一项也是字符串
+        return images[0] if isinstance(images[0], str) else None
+        
     return None
 
 
