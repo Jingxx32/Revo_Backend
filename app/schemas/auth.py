@@ -1,9 +1,12 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
+from typing import Optional
 
 
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, description="Password must be at least 8 characters long")
+    full_name: Optional[str] = Field(None, description="User's full name")
+    phone_number: Optional[str] = Field(None, description="User's phone number")
     # Note: role field removed for security - all new users are created as 'customer' by default
     # Role is set server-side and cannot be specified by the client
     

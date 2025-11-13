@@ -42,7 +42,9 @@ def register(user_in: UserCreate, db: Session = Depends(get_session)):
     new_user = User(
         email=user_in.email,
         password_hash=hashed_password,
-        role="customer"  # <--- 这就是真正的修复！强制设置为 customer
+        role="customer",  # <--- 这就是真正的修复！强制设置为 customer
+        full_name=user_in.full_name,
+        phone_number=user_in.phone_number,
     )
     
     db.add(new_user)
