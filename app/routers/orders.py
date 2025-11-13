@@ -244,7 +244,7 @@ def checkout_compatible(
     subtotal = sum(item.price * item.quantity for item in items)
     tax = 0.0  # Frontend calculates tax
     shipping_fee = 0.0
-    total = float(orderData.total) if isinstance(orderData.total, str) else orderData.total
+    total = orderData.total  # total is now float type in CheckoutRequest
     
     # Convert shippingAddress to dict for JSON storage
     shipping_address_json = None

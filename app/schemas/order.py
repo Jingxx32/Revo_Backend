@@ -62,7 +62,7 @@ class CheckoutRequest(BaseModel):
     """Checkout request schema matching frontend structure."""
     
     items: List[CartItemSchema] = Field(..., description="List of cart items")
-    total: str = Field(..., description="Total amount (as string)")
+    total: float = Field(..., description="Total amount")
     paymentMethod: str = Field(..., description="Payment method: 'card', 'wallet', or 'cod'")
     timestamp: Optional[str] = Field(None, description="Order timestamp (ISO 8601 format)")
     shippingAddress: Optional[ShippingAddressSchema] = Field(None, description="Shipping address information")
@@ -83,7 +83,7 @@ class CheckoutRequest(BaseModel):
                         "condition": "Excellent"
                     }
                 ],
-                "total": "1234.56",
+                "total": 1234.56,
                 "paymentMethod": "card",
                 "timestamp": "2025-01-15T10:00:00.000Z",
                 "shippingAddress": {
