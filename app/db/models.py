@@ -1,4 +1,4 @@
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, Dict, List, Any
 from datetime import datetime
 from sqlalchemy import Column, JSON, TIMESTAMP
@@ -28,9 +28,40 @@ class User(SQLModel, table=True):
     email: str = Field(sa_column_kwargs={"unique": True})
     password_hash: str
     role: str = Field(default="customer")  # CHECK: customer, admin, evaluator
+    full_name: Optional[str] = Field(default=None)  # Full name of the user
+    phone_number: Optional[str] = Field(default=None)  # Phone number of the user
     created_at: datetime | None = Field(
         default=None, sa_column=Column(TIMESTAMP(timezone=True), server_default=func.now())
     )
+    
+    # Relationships
+    addresses: List["Address"] = Relationship(back_populates="user")
+
+
+# Addresses
+class Address(SQLModel, table=True):
+    __tablename__ = "addresses"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id")
+    full_name: str = Field(..., description="Recipient full name")
+    phone_number: str = Field(..., description="Contact phone number")
+    address_line1: str = Field(..., description="Street address / Building")
+    address_line2: Optional[str] = Field(default=None, description="Apartment / Suite / Additional info")
+    city: str = Field(..., description="City name")
+    state: str = Field(..., description="Province / State")
+    postal_code: str = Field(..., description="Postal / ZIP code")
+    country: str = Field(default="Canada", description="Country name")
+    is_default: bool = Field(default=False, description="Is this the default address")
+    created_at: datetime | None = Field(
+        default=None, sa_column=Column(TIMESTAMP(timezone=True), server_default=func.now())
+    )
+    updated_at: datetime | None = Field(
+        default=None, sa_column=Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+    )
+    
+    # Relationships
+    user: "User" = Relationship(back_populates="addresses")
 
 
 # Products
@@ -95,6 +126,7 @@ class Order(SQLModel, table=True):
     tax: float
     shipping_fee: float = Field(default=0)
     total: float
+    shipping_address_json: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))  # JSON snapshot of shipping address
     created_at: datetime | None = Field(
         default=None, sa_column=Column(TIMESTAMP(timezone=True), server_default=func.now())
     )

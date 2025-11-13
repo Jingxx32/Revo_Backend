@@ -27,7 +27,7 @@ def create_db_and_tables():
     try:
         # Import all models here to ensure they are registered
         from app.db.models import (
-            Brand, Category, User, Product, Cart, CartItem,
+            Brand, Category, User, Address, Product, Cart, CartItem,
             Order, OrderItem, Payment, PickupRequest, Evaluation, AuditLog
         )
         

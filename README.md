@@ -310,5 +310,3 @@ For support, please open an issue in the GitHub repository or contact the develo
 - [ ] Add comprehensive logging and monitoring
 
 ---
-
-**Built with ❤️ using FastAPI**

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.db.database import create_db_and_tables
-from app.routers import auth, products, cart, orders, tradein, internal, categories, users, locations
+from app.routers import auth, products, cart, orders, tradein, internal, categories, users, locations, address
 
 # Initialize database
 try:
@@ -69,6 +69,7 @@ app.include_router(internal.router)
 app.include_router(categories.router)
 app.include_router(users.router)
 app.include_router(locations.router)
+app.include_router(address.router)
 
 # app.include_router(users.router, prefix="/api/users", tags=["Users"])
 # app.include_router(products.router, prefix="/api/products", tags=["Products"])

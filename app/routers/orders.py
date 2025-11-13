@@ -9,12 +9,36 @@ from sqlmodel import select
 from app.core.security import get_current_user
 from app.db.database import get_session
 from app.db.models import Cart, CartItem, Order, OrderItem, Payment, Product, User
+from app.schemas.order import CheckoutRequest, OrderCreate, ShippingAddressSchema
 
 
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+
+def _update_user_info_from_shipping_address(user: User, shipping_address: Optional[ShippingAddressSchema], session) -> None:
+    """Update user information from shipping address if user info is empty."""
+    if not shipping_address:
+        return
+    
+    updated = False
+    
+    # Update full_name if empty
+    if not user.full_name and shipping_address.fullName:
+        user.full_name = shipping_address.fullName
+        updated = True
+    
+    # Update phone_number if empty
+    if not user.phone_number and shipping_address.phone:
+        user.phone_number = shipping_address.phone
+        updated = True
+    
+    # Commit changes if any updates were made
+    if updated:
+        session.add(user)
+        session.commit()
 
 
 def _get_product_image(product: Product) -> Optional[str]:
@@ -58,8 +82,65 @@ def _compute_cart_totals(user_id: int, session) -> dict:
     return {"cart": cart, "items": expanded_items, "subtotal": subtotal}
 
 
+def _check_and_deduct_inventory(items: list, session) -> None:
+    """Check inventory and deduct stock for order items.
+    
+    Args:
+        items: List of items, each containing (item, product, unit_price, line_total) for create_order
+               OR list of CartItemSchema objects for checkout_compatible
+        session: Database session
+        
+    Raises:
+        HTTPException: If any product has insufficient inventory
+    """
+    for item_data in items:
+        # Handle different item formats
+        if isinstance(item_data, tuple) and len(item_data) == 4:
+            # Format from _compute_cart_totals: (item, product, unit_price, line_total)
+            cart_item, product, unit_price, line_total = item_data
+            request_qty = cart_item.qty
+            product_id = product.id
+            product_title = product.title
+        else:
+            # Format from checkout_compatible: CartItemSchema object
+            product_id = item_data.id if hasattr(item_data, 'id') else item_data.get('id')
+            request_qty = item_data.quantity if hasattr(item_data, 'quantity') else item_data.get('quantity', 1)
+            
+            product = session.get(Product, product_id)
+            if not product:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Product with ID {product_id} not found"
+                )
+            product_title = product.title
+        
+        # Check inventory
+        if product.qty < request_qty:
+            available_qty = product.qty
+            if available_qty == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Product '{product_title}' is out of stock"
+                )
+            else:
+                # Format error message as requested: "Product 'iPhone 14' is out of stock (Only 2 left)"
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Product '{product_title}' is out of stock (Only {available_qty} left)"
+                )
+        
+        # Deduct inventory
+        product.qty -= request_qty
+        session.add(product)
+
+
 @router.post("/")
-def create_order(current_user: User = Depends(get_current_user), session=Depends(get_session)):
+def create_order(
+    order_create: OrderCreate = Body(None),
+    current_user: User = Depends(get_current_user),
+    session=Depends(get_session),
+):
+    """Create order from cart with optional shipping address."""
     if not stripe.api_key:
         raise HTTPException(status_code=500, detail="Stripe secret key is not configured")
 
@@ -72,6 +153,16 @@ def create_order(current_user: User = Depends(get_current_user), session=Depends
     shipping_fee = 0.0
     total = subtotal + tax + shipping_fee
 
+    # Convert shippingAddress to dict for JSON storage
+    shipping_address_json = None
+    if order_create and order_create.shippingAddress:
+        shipping_address_json = order_create.shippingAddress.model_dump(exclude_none=True)
+        # Update user info from shipping address if empty
+        _update_user_info_from_shipping_address(current_user, order_create.shippingAddress, session)
+
+    # Check and deduct inventory BEFORE creating order
+    _check_and_deduct_inventory(totals["items"], session)
+
     # Create order in pending state
     order = Order(
         user_id=current_user.id,
@@ -80,6 +171,7 @@ def create_order(current_user: User = Depends(get_current_user), session=Depends
         tax=tax,
         shipping_fee=shipping_fee,
         total=total,
+        shipping_address_json=shipping_address_json,
     )
     session.add(order)
     session.commit()
@@ -129,11 +221,11 @@ def create_order(current_user: User = Depends(get_current_user), session=Depends
 
 @router.post("/checkout")
 def checkout_compatible(
-    orderData: dict = Body(...),
+    orderData: CheckoutRequest,
     current_user: User = Depends(get_current_user),
     session=Depends(get_session),
 ):
-    """Compatible checkout endpoint for frontend (expects {items, total, paymentMethod})."""
+    """Compatible checkout endpoint for frontend (expects {items, total, paymentMethod, shippingAddress})."""
     if not stripe.api_key:
         return {
             "success": False,
@@ -141,7 +233,7 @@ def checkout_compatible(
         }
     
     # Extract items from orderData
-    items = orderData.get("items", [])
+    items = orderData.items
     if not items:
         return {
             "success": False,
@@ -149,88 +241,124 @@ def checkout_compatible(
         }
     
     # Calculate totals
-    subtotal = sum(item.get("price", 0) * item.get("quantity", 0) for item in items)
+    subtotal = sum(item.price * item.quantity for item in items)
     tax = 0.0  # Frontend calculates tax
     shipping_fee = 0.0
-    total = orderData.get("total", subtotal + tax + shipping_fee)
+    total = float(orderData.total) if isinstance(orderData.total, str) else orderData.total
     
-    # Create order
-    order = Order(
-        user_id=current_user.id,
-        status="pending",
-        subtotal=subtotal,
-        tax=tax,
-        shipping_fee=shipping_fee,
-        total=total,
-    )
-    session.add(order)
-    session.commit()
-    session.refresh(order)
+    # Convert shippingAddress to dict for JSON storage
+    shipping_address_json = None
+    if orderData.shippingAddress:
+        shipping_address_json = orderData.shippingAddress.model_dump(exclude_none=True)
+        # Update user info from shipping address if empty
+        _update_user_info_from_shipping_address(current_user, orderData.shippingAddress, session)
     
-    # Create order items
-    for item in items:
-        product = session.get(Product, item.get("id"))
-        if product:
+    try:
+        # Check and deduct inventory BEFORE creating order
+        _check_and_deduct_inventory(items, session)
+        
+        # Create order
+        order = Order(
+            user_id=current_user.id,
+            status="pending",
+            subtotal=subtotal,
+            tax=tax,
+            shipping_fee=shipping_fee,
+            total=total,
+            shipping_address_json=shipping_address_json,
+        )
+        session.add(order)
+        
+        # Create order items
+        for item in items:
+            product = session.get(Product, item.id)
+            if not product:
+                # This should not happen if inventory check passed, but add safety check
+                session.rollback()
+                return {
+                    "success": False,
+                    "error": f"Product with ID {item.id} not found. Please refresh and try again."
+                }
             session.add(
                 OrderItem(
                     order_id=order.id,
                     product_id=product.id,
-                    title_snapshot=item.get("name", product.title),
-                    unit_price=item.get("price", 0),
-                    qty=item.get("quantity", 1),
-                    line_total=item.get("price", 0) * item.get("quantity", 1),
+                    title_snapshot=item.name or product.title,
+                    unit_price=item.price,
+                    qty=item.quantity,
+                    line_total=item.price * item.quantity,
                 )
             )
-    session.commit()
-    
-    # Create Stripe PaymentIntent if using credit card
-    payment_method = orderData.get("paymentMethod", "card")
-    if payment_method == "card" or payment_method == "credit":
-        try:
-            amount_cents = int(round(total * 100))
-            payment_intent = stripe.PaymentIntent.create(
-                amount=amount_cents,
-                currency="usd",
-                metadata={
-                    "order_id": str(order.id),
-                    "user_id": str(current_user.id),
-                },
-                description=f"Order #{order.id}",
-                automatic_payment_methods={"enabled": True},
-            )
-            
-            session.add(
-                Payment(
-                    order_id=order.id,
-                    stripe_pi=payment_intent.id,
-                    amount=total,
+        
+        # Create Stripe PaymentIntent if using credit card
+        payment_method = orderData.paymentMethod
+        payment_intent = None
+        
+        if payment_method == "card" or payment_method == "credit":
+            try:
+                # Flush to get order.id without committing
+                session.flush()
+                
+                amount_cents = int(round(total * 100))
+                payment_intent = stripe.PaymentIntent.create(
+                    amount=amount_cents,
                     currency="usd",
-                    status=payment_intent.status,
+                    metadata={
+                        "order_id": str(order.id),
+                        "user_id": str(current_user.id),
+                    },
+                    description=f"Order #{order.id}",
+                    automatic_payment_methods={"enabled": True},
                 )
-            )
-            session.commit()
-            
+                
+                session.add(
+                    Payment(
+                        order_id=order.id,
+                        stripe_pi=payment_intent.id,
+                        amount=total,
+                        currency="usd",
+                        status=payment_intent.status,
+                    )
+                )
+            except Exception as e:
+                session.rollback()
+                return {
+                    "success": False,
+                    "error": f"Payment processing failed: {str(e)}"
+                }
+        else:
+            # For wallet or COD, mark as paid directly
+            order.status = "paid"
+        
+        # Commit all changes in one transaction
+        session.commit()
+        session.refresh(order)
+        
+        # Return response based on payment method
+        if payment_method == "card" or payment_method == "credit":
             return {
                 "success": True,
                 "orderId": f"ORD{order.id}",
                 "order_id": order.id,
                 "client_secret": payment_intent.client_secret,
             }
-        except Exception as e:
+        else:
             return {
-                "success": False,
-                "error": f"Payment processing failed: {str(e)}"
+                "success": True,
+                "orderId": f"ORD{order.id}",
+                "order_id": order.id,
             }
-    else:
-        # For wallet or COD, mark as paid directly
-        order.status = "paid"
-        session.add(order)
-        session.commit()
-        
+            
+    except HTTPException as e:
+        # Re-raise HTTPException (for inventory errors)
+        session.rollback()
+        raise
+    except Exception as e:
+        # Handle any other errors
+        session.rollback()
         return {
-            "success": True,
-            "orderId": f"ORD{order.id}",
-            "order_id": order.id,
+            "success": False,
+            "error": f"Order creation failed: {str(e)}"
         }
 
 
