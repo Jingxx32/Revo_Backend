@@ -269,6 +269,9 @@ def checkout_compatible(
         )
         session.add(order)
         
+        # Flush to get order.id before creating order items (required for OrderItem.order_id)
+        session.flush()
+        
         # Create order items
         for item in items:
             product = session.get(Product, item.id)
@@ -296,8 +299,7 @@ def checkout_compatible(
         
         if payment_method == "card" or payment_method == "credit":
             try:
-                # Flush to get order.id without committing
-                session.flush()
+                # order.id is already available from flush above
                 
                 amount_cents = int(round(total * 100))
                 payment_intent = stripe.PaymentIntent.create(
