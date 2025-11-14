@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional
+from datetime import datetime
 
 
 class AddressBase(BaseModel):
@@ -40,8 +41,8 @@ class AddressRead(AddressBase):
     
     id: int = Field(..., description="Address ID")
     user_id: int = Field(..., description="User ID who owns this address")
-    created_at: Optional[str] = Field(None, description="Creation timestamp")
-    updated_at: Optional[str] = Field(None, description="Last update timestamp")
+    created_at: Optional[datetime] = Field(None, description="Creation timestamp")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     
     class Config:
         from_attributes = True
