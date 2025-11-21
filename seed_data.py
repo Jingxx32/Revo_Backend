@@ -475,7 +475,7 @@ def seed_database():
             else:
                 print(f"  - Test user already exists: {existing_user.email}")
         
-        print("\n✅ Database seeding completed successfully!")
+        print("\n Database seeding completed successfully!")
         print(f"\nSummary:")
         print(f"  - Brands: {len(brands)}")
         print(f"  - Categories: {len(categories)}")
@@ -483,7 +483,7 @@ def seed_database():
         print(f"  - Test Users: {len(test_users_data)}")
         
     except Exception as e:
-        print(f"\n❌ Error seeding database: {e}")
+        print(f"\n Error seeding database: {e}")
         session.rollback()
         raise
     finally:

@@ -97,7 +97,7 @@ def migrate_database():
                     print(f"⚠ Migration note: {str(e)[:100]}")
                     conn.rollback()
             
-            print("\n✅ Database migration completed!")
+            print("\n Database migration completed!")
             print("\nNew columns added:")
             print("  - users.full_name")
             print("  - users.phone_number")
@@ -105,7 +105,7 @@ def migrate_database():
             print("  - addresses table (if it didn't exist)")
             
         except Exception as e:
-            print(f"\n❌ Migration error: {e}")
+            print(f"\n Migration error: {e}")
             import traceback
             traceback.print_exc()
             raise

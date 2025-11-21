@@ -58,8 +58,7 @@ if os.path.exists("static/images"):
 async def favicon():
     return Response(status_code=204)
 
-# TODO: Include routers
-# from app.routers import users, products, cart, orders, tradein, internal
+#  Include routers
 app.include_router(auth.router)
 app.include_router(products.router)
 app.include_router(cart.router)
@@ -77,4 +76,3 @@ app.include_router(address.router)
 # app.include_router(orders.router, prefix="/api/orders", tags=["Orders"])
 # app.include_router(tradein.router, prefix="/api/tradein", tags=["Trade-in"])
 # app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
-
