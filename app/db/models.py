@@ -126,6 +126,7 @@ class Order(SQLModel, table=True):
     tax: float
     shipping_fee: float = Field(default=0)
     total: float
+    notes: Optional[str] = Field(default=None)
     shipping_address_json: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))  # JSON snapshot of shipping address
     created_at: datetime | None = Field(
         default=None, sa_column=Column(TIMESTAMP(timezone=True), server_default=func.now())
@@ -176,6 +177,8 @@ class PickupRequest(SQLModel, table=True):
     )
     deposit_amount: Optional[float] = Field(default=None)
     status: Optional[str] = Field(default=None)  # CHECK: requested, collected, evaluating, offered, accepted, rejected
+    notes: Optional[str] = Field(default=None)
+    final_price: Optional[float] = Field(default=None)
 
 
 class Evaluation(SQLModel, table=True):

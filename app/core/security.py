@@ -169,3 +169,19 @@ async def get_current_user(
         raise credentials_exception
     return user
 
+
+async def get_current_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Ensure the current user has admin privileges.
+    
+    Currently treats users with role 'admin' as administrators.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required",
+        )
+    return current_user
+
