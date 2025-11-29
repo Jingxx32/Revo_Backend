@@ -172,13 +172,14 @@ class PickupRequest(SQLModel, table=True):
     additional_info: Optional[str] = Field(default=None)  # Additional information/notes
     photos_json: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))  # JSON array of photo URLs
     address_json: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
     scheduled_at: datetime | None = Field(
         default=None, sa_column=Column(TIMESTAMP(timezone=True))
     )
     deposit_amount: Optional[float] = Field(default=None)
     status: Optional[str] = Field(default=None)  # CHECK: requested, collected, evaluating, offered, accepted, rejected
     notes: Optional[str] = Field(default=None)
-    final_price: Optional[float] = Field(default=None)
+    estimated_price: Optional[float] = Field(default=None)
 
 
 class Evaluation(SQLModel, table=True):

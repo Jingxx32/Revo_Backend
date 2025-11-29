@@ -166,11 +166,12 @@ def list_tradeins(
                     "additional_info": pickup.additional_info,
                     "photos": pickup.photos_json or [],
                     "address_json": pickup.address_json,
+                    "created_at": pickup.created_at,
                     "scheduled_at": pickup.scheduled_at,
                     "deposit_amount": pickup.deposit_amount,
                     "status": pickup.status,
                     "notes": pickup.notes,
-                    "final_price": pickup.final_price,
+                    "estimated_price": pickup.estimated_price,
                 },
                 "user": {
                     "id": user.id,

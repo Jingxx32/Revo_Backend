@@ -9,7 +9,7 @@ from sqlmodel import select
 
 from app.core.security import get_current_user
 from app.db.database import get_session
-from app.db.models import Brand, PickupRequest, User
+from app.db.models import Brand, Evaluation, PickupRequest, User
 
 
 router = APIRouter(prefix="/api/tradein", tags=["Trade-in"])
@@ -99,6 +99,11 @@ async def create_pickup_request(
         None,
         description="Scheduled pickup date and time in ISO 8601 format (e.g., '2025-01-15T10:00:00' or '2025-01-15T10:00:00Z'). This field is optional. If not provided, the pickup will be scheduled based on availability.",
         example="2025-01-15T10:00:00"
+    ),
+    estimated_price: Optional[float] = Form(
+        None,
+        description="Estimated trade-in price at the time of request (from estimation API).",
+        example=750.0,
     ),
     photos: list[UploadFile] = File(
         default=[],
@@ -241,6 +246,7 @@ async def create_pickup_request(
         address_json=parsed_address,
         scheduled_at=parsed_scheduled_at,
         status="requested",
+        estimated_price=estimated_price,
     )
     session.add(pr)
     session.commit()
@@ -268,6 +274,7 @@ async def create_pickup_request(
         "photos": photo_urls,
         "status": pr.status,
         "created_at": pr.created_at if hasattr(pr, "created_at") else None,
+        "estimated_price": pr.estimated_price,
     }
 
 
@@ -334,32 +341,50 @@ def list_my_pickups(
     session=Depends(get_session),
 ):
     """Get current user's pickup requests."""
-    stmt = select(PickupRequest).where(PickupRequest.user_id == current_user.id)
-    requests = session.exec(stmt).all()
-    
-    # Format response with brand information and parsed photos
+    # LEFT OUTER JOIN evaluations so we can show final_offer/notes if available
+    stmt = (
+        select(PickupRequest, Evaluation)
+        .where(PickupRequest.user_id == current_user.id)
+        .join(Evaluation, Evaluation.pickup_id == PickupRequest.id, isouter=True)
+    )
+    rows = session.exec(stmt).all()
+
     result = []
-    for req in requests:
+    for req, ev in rows:
         brand = session.get(Brand, req.brand_id) if req.brand_id else None
-        # photos_json is now a List[str] type, no need for json.loads()
         photos = req.photos_json if req.photos_json else []
-        
-        result.append({
-            "id": req.id,
-            "user_id": req.user_id,
-            "brand_id": req.brand_id,
-            "brand_name": brand.name if brand else None,
-            "model_text": req.model_text,
-            "storage": req.storage,
-            "condition": req.condition,
-            "additional_info": req.additional_info,
-            "photos": photos,
-            "address_json": req.address_json,
-            "scheduled_at": req.scheduled_at,
-            "deposit_amount": req.deposit_amount,
-            "status": req.status,
-        })
-    
+
+        evaluation_data = (
+            {
+                "id": ev.id,
+                "pickup_id": ev.pickup_id,
+                "final_offer": ev.final_offer,
+                "notes": ev.notes,
+                "created_at": ev.created_at,
+            }
+            if ev
+            else None
+        )
+
+        result.append(
+            {
+                "id": req.id,
+                "user_id": req.user_id,
+                "brand_id": req.brand_id,
+                "brand_name": brand.name if brand else None,
+                "model_text": req.model_text,
+                "storage": req.storage,
+                "condition": req.condition,
+                "additional_info": req.additional_info,
+                "photos": photos,
+                "address_json": req.address_json,
+                "scheduled_at": req.scheduled_at,
+                "deposit_amount": req.deposit_amount,
+                "status": req.status,
+                "evaluation": evaluation_data,
+            }
+        )
+
     return result
 
 
