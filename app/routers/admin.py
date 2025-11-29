@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Dict, List, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -28,13 +28,14 @@ class TradeinEvaluationPayload(BaseModel):
     final_offer: float
     notes: Optional[str] = None
     status: str
+    evaluation_cost: Optional[float] = None
+    diagnostics: Optional[Dict[str, Any]] = None
+    parts_replaced: Optional[List[str]] = None
 
 
-# ---------------------------------------------------------------------------
 # Sales Orders Management
-# ---------------------------------------------------------------------------
 
-@router.get("/orders")
+@router.get("/orders", include_in_schema=False)
 def list_orders(
     admin: User = Depends(get_current_admin),
     session=Depends(get_session),
@@ -72,7 +73,7 @@ def list_orders(
     return results
 
 
-@router.put("/orders/{order_id}")
+@router.put("/orders/{order_id}", include_in_schema=False)
 def update_order(
     order_id: int,
     payload: OrderUpdatePayload,
@@ -99,7 +100,7 @@ def update_order(
     return order
 
 
-@router.delete("/orders/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/orders/{order_id}", status_code=status.HTTP_204_NO_CONTENT, include_in_schema=False)
 def delete_order(
     order_id: int,
     admin: User = Depends(get_current_admin),
@@ -132,9 +133,7 @@ def delete_order(
     return None
 
 
-# ---------------------------------------------------------------------------
 # Trade-in Orders Management
-# ---------------------------------------------------------------------------
 
 @router.get("/tradeins")
 def list_tradeins(
@@ -219,6 +218,9 @@ def evaluate_tradein(
         evaluation.final_offer = payload.final_offer
         evaluation.notes = payload.notes
         evaluation.tester_id = admin.id
+        evaluation.evaluation_cost = payload.evaluation_cost
+        evaluation.diagnostics_json = payload.diagnostics
+        evaluation.parts_replaced_json = payload.parts_replaced
         session.add(evaluation)
     else:
         evaluation = Evaluation(
@@ -226,6 +228,9 @@ def evaluate_tradein(
             tester_id=admin.id,
             final_offer=payload.final_offer,
             notes=payload.notes,
+            evaluation_cost=payload.evaluation_cost,
+            diagnostics_json=payload.diagnostics,
+            parts_replaced_json=payload.parts_replaced,
         )
         session.add(evaluation)
 

@@ -12,6 +12,7 @@ This document provides a detailed reference of all API endpoints with their requ
 - [Categories](#categories)
 - [Locations](#locations)
 - [Users](#users)
+- [Admin](#admin)
 
 ---
 
@@ -647,6 +648,7 @@ Create a pickup request for trade-in.
 | additional_info | string | No | Additional device information | "Minor scratches" |
 | address_json | string | No | Pickup address (JSON string or plain text) | '{"street": "123 Main St", "city": "Shanghai"}' |
 | scheduled_at | string | No | Scheduled pickup date/time (ISO 8601) | "2025-01-15T10:00:00" |
+| estimated_price | float | No | Estimated trade-in price (from estimation API) | 750.0 |
 | photos | file[] | No | Device photos (up to 5 files, each < 5MB) | - |
 
 **Note:** Either `brand_id` OR `brand_name` must be provided.
@@ -666,7 +668,8 @@ Create a pickup request for trade-in.
     "/uploads/tradein_photos/pickup_123_1.jpg"
   ],
   "status": "requested",
-  "created_at": "2025-01-15T10:00:00"
+  "created_at": "2025-01-15T10:00:00",
+  "estimated_price": 750.0
 }
 ```
 
@@ -683,6 +686,7 @@ Create a pickup request for trade-in.
 | photos | array[string] | Photo URLs |
 | status | string | Request status (requested, accepted, rejected, offered) |
 | created_at | string (datetime) | Creation timestamp |
+| estimated_price | float | Initial estimated price |
 
 **Error Responses:**
 - `400 Bad Request`: Missing required fields or brand not found
@@ -717,7 +721,14 @@ Get current user's pickup requests.
     },
     "scheduled_at": "2025-01-15T10:00:00",
     "deposit_amount": null,
-    "status": "requested"
+    "status": "requested",
+    "evaluation": {
+      "id": 1,
+      "pickup_id": 123,
+      "final_offer": 700.0,
+      "notes": "Device in good condition",
+      "created_at": "2025-01-16T10:00:00"
+    }
   }
 ]
 ```
@@ -738,6 +749,12 @@ Get current user's pickup requests.
 | scheduled_at | string (datetime) | Scheduled pickup time |
 | deposit_amount | float | Deposit amount (if any) |
 | status | string | Request status |
+| evaluation | object \| null | Evaluation information (null if not evaluated yet) |
+| evaluation.id | integer | Evaluation ID |
+| evaluation.pickup_id | integer | Pickup request ID |
+| evaluation.final_offer | float | Final offer price |
+| evaluation.notes | string | Evaluation notes |
+| evaluation.created_at | string (datetime) | Evaluation creation timestamp |
 
 ---
 
@@ -966,6 +983,326 @@ Get location details by ID.
 
 ---
 
+## Admin
+
+**Note:** All admin endpoints require admin role. Users with role "admin" can access these endpoints.
+
+### GET /api/admin/orders
+
+Get all sales orders with customer information.
+
+**Authentication:** Required (Bearer token with admin role)
+
+**Response (200 OK):**
+```json
+[
+  {
+    "order": {
+      "id": 1,
+      "user_id": 1,
+      "status": "paid",
+      "subtotal": 1799.98,
+      "tax": 0.0,
+      "shipping_fee": 0.0,
+      "total": 1799.98,
+      "notes": "Handle with care",
+      "shipping_address_json": {
+        "street": "123 Main St",
+        "city": "Vancouver",
+        "postal_code": "V6B 1A1"
+      },
+      "created_at": "2025-01-15T10:00:00"
+    },
+    "user": {
+      "id": 1,
+      "email": "customer@example.com",
+      "full_name": "John Doe"
+    }
+  }
+]
+```
+
+**Response Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| order | object | Order information |
+| order.id | integer | Order ID |
+| order.user_id | integer | User ID |
+| order.status | string | Order status (pending, paid, shipped, completed, refunded) |
+| order.subtotal | float | Order subtotal |
+| order.tax | float | Tax amount |
+| order.shipping_fee | float | Shipping fee |
+| order.total | float | Total amount |
+| order.notes | string | Order notes |
+| order.shipping_address_json | object | Shipping address snapshot |
+| order.created_at | string (datetime) | Order creation timestamp |
+| user | object | Customer information |
+| user.id | integer | User ID |
+| user.email | string | User email |
+| user.full_name | string | User full name |
+
+**Error Response (403):**
+```json
+{
+  "detail": "Admin role required"
+}
+```
+
+---
+
+### PUT /api/admin/orders/{order_id}
+
+Update order status and notes.
+
+**Authentication:** Required (Bearer token with admin role)
+
+**Path Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| order_id | integer | Yes | Order ID |
+
+**Request Body (JSON):**
+```json
+{
+  "status": "shipped",
+  "notes": "Shipped via express delivery"
+}
+```
+
+**Request Fields:**
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| status | string | No | Order status | "shipped" |
+| notes | string | No | Order notes | "Handle with care" |
+
+**Response (200 OK):**
+```json
+{
+  "id": 1,
+  "user_id": 1,
+  "status": "shipped",
+  "subtotal": 1799.98,
+  "tax": 0.0,
+  "shipping_fee": 0.0,
+  "total": 1799.98,
+  "notes": "Shipped via express delivery",
+  "shipping_address_json": {...},
+  "created_at": "2025-01-15T10:00:00"
+}
+```
+
+**Error Responses:**
+- `403 Forbidden`: Admin role required
+- `404 Not Found`: Order not found
+
+---
+
+### DELETE /api/admin/orders/{order_id}
+
+Delete an order and its associated items and payments.
+
+**Authentication:** Required (Bearer token with admin role)
+
+**Path Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| order_id | integer | Yes | Order ID |
+
+**Response (204 No Content):** No response body
+
+**Error Responses:**
+- `403 Forbidden`: Admin role required
+- `404 Not Found`: Order not found
+
+---
+
+### GET /api/admin/tradeins
+
+Get all trade-in pickup requests with evaluation and user information.
+
+**Authentication:** Required (Bearer token with admin role)
+
+**Response (200 OK):**
+```json
+[
+  {
+    "pickup": {
+      "id": 123,
+      "user_id": 1,
+      "brand_id": 1,
+      "model_text": "iPhone 14 Pro",
+      "storage": "256GB",
+      "condition": "A",
+      "additional_info": "Minor scratches",
+      "photos": [
+        "/uploads/tradein_photos/pickup_123_0.jpg"
+      ],
+      "address_json": {
+        "street": "123 Main St",
+        "city": "Vancouver"
+      },
+      "created_at": "2025-01-15T10:00:00",
+      "scheduled_at": "2025-01-20T14:00:00",
+      "deposit_amount": null,
+      "status": "offered",
+      "notes": "Admin notes",
+      "estimated_price": 750.0
+    },
+    "user": {
+      "id": 1,
+      "email": "customer@example.com",
+      "full_name": "John Doe"
+    },
+    "evaluation": {
+      "id": 1,
+      "pickup_id": 123,
+      "tester_id": 2,
+      "final_offer": 700.0,
+      "notes": "Evaluation notes",
+      "created_at": "2025-01-16T10:00:00"
+    }
+  }
+]
+```
+
+**Response Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| pickup | object | Pickup request information |
+| pickup.id | integer | Pickup request ID |
+| pickup.user_id | integer | User ID |
+| pickup.brand_id | integer | Brand ID |
+| pickup.model_text | string | Device model name |
+| pickup.storage | string | Storage capacity |
+| pickup.condition | string | Device condition |
+| pickup.additional_info | string | Additional information |
+| pickup.photos | array[string] | Photo URLs |
+| pickup.address_json | object | Pickup address |
+| pickup.created_at | string (datetime) | Creation timestamp |
+| pickup.scheduled_at | string (datetime) | Scheduled pickup time |
+| pickup.deposit_amount | float | Deposit amount (if any) |
+| pickup.status | string | Request status (requested, collected, evaluating, offered, accepted, rejected) |
+| pickup.notes | string | Admin notes |
+| pickup.estimated_price | float | Initial estimated price |
+| user | object | Customer information |
+| user.id | integer | User ID |
+| user.email | string | User email |
+| user.full_name | string | User full name |
+| evaluation | object \| null | Evaluation information (null if not evaluated) |
+| evaluation.id | integer | Evaluation ID |
+| evaluation.pickup_id | integer | Pickup request ID |
+| evaluation.tester_id | integer | Admin/evaluator ID |
+| evaluation.final_offer | float | Final offer price |
+| evaluation.notes | string | Evaluation notes |
+| evaluation.created_at | string (datetime) | Evaluation creation timestamp |
+
+**Error Response (403):**
+```json
+{
+  "detail": "Admin role required"
+}
+```
+
+---
+
+### PUT /api/admin/tradeins/{pickup_id}/evaluate
+
+Create or update evaluation for a pickup request and update pickup status.
+
+**Authentication:** Required (Bearer token with admin role)
+
+**Path Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| pickup_id | integer | Yes | Pickup request ID |
+
+**Request Body (JSON):**
+```json
+{
+  "final_offer": 700.0,
+  "notes": "Device in good condition",
+  "status": "offered",
+  "evaluation_cost": 50.0,
+  "diagnostics": {
+    "battery_health": 85,
+    "screen_condition": "good",
+    "functionality": "all_working"
+  },
+  "parts_replaced": ["screen_protector"]
+}
+```
+
+**Request Fields:**
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| final_offer | float | Yes | Final offer price | 700.0 |
+| notes | string | No | Evaluation notes | "Device in good condition" |
+| status | string | Yes | Pickup request status | "offered" |
+| evaluation_cost | float | No | Evaluation cost | 50.0 |
+| diagnostics | object | No | Diagnostics information (JSON object) | {"battery_health": 85} |
+| parts_replaced | array[string] | No | List of replaced parts | ["screen_protector"] |
+
+**Response (200 OK):**
+```json
+{
+  "pickup": {
+    "id": 123,
+    "user_id": 1,
+    "brand_id": 1,
+    "model_text": "iPhone 14 Pro",
+    "status": "offered",
+    ...
+  },
+  "evaluation": {
+    "id": 1,
+    "pickup_id": 123,
+    "tester_id": 2,
+    "final_offer": 700.0,
+    "notes": "Device in good condition",
+    "evaluation_cost": 50.0,
+    "diagnostics_json": {
+      "battery_health": 85,
+      "screen_condition": "good"
+    },
+    "parts_replaced_json": ["screen_protector"],
+    "created_at": "2025-01-16T10:00:00"
+  }
+}
+```
+
+**Response Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| pickup | object | Updated pickup request |
+| evaluation | object | Created or updated evaluation |
+
+**Error Responses:**
+- `403 Forbidden`: Admin role required
+- `404 Not Found`: Pickup request not found
+
+**Note:** If an evaluation already exists for the pickup request, it will be updated. Otherwise, a new evaluation will be created.
+
+---
+
+### DELETE /api/admin/tradeins/{pickup_id}
+
+Delete a pickup request and its associated evaluations.
+
+**Authentication:** Required (Bearer token with admin role)
+
+**Path Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| pickup_id | integer | Yes | Pickup request ID |
+
+**Response (204 No Content):** No response body
+
+**Error Responses:**
+- `403 Forbidden`: Admin role required
+- `404 Not Found`: Pickup request not found
+
+---
+
 ## Authentication Header
 
 Most endpoints require authentication using a Bearer token in the Authorization header:
@@ -1016,6 +1353,8 @@ Some endpoints return errors in a custom format:
 ## Notes for Frontend Developers
 
 1. **Authentication**: Always include the Bearer token in the Authorization header for protected endpoints.
+
+   - **Admin Endpoints**: Admin endpoints (`/api/admin/*`) require a user with `role: "admin"`. If a non-admin user attempts to access these endpoints, they will receive a `403 Forbidden` error.
 
 2. **Content-Type**: 
    - Use `application/json` for JSON requests
